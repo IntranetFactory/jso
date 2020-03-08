@@ -1,19 +1,11 @@
 /**
  * JSO - Javascript OAuth Library
- * 	Version 4.0
+ * 	Version 4.1
  *  UNINETT AS - http://uninett.no
  *  Author: Andreas Åkre Solberg <andreas.solberg@uninett.no>
  *  Licence: Simplified BSD Licence
- *
- *  Documentation available at: https://github.com/andreassolberg/jso
  */
 
-
-// Polyfills to support >= IE10
-import assign from 'core-js/fn/object/assign'
-import 'core-js/fn/array/includes'
-import 'core-js/fn/promise'
-// ------
 
 import store from './store'
 import utils from './utils'
@@ -22,12 +14,12 @@ import utils from './utils'
 // import Authentication from './Authentication/Authentication'
 
 import BasicLoader from './Loaders/BasicLoader'
-import HTTPRedirect from './Loaders/HTTPRedirect'
+// import HTTPRedirect from './Loaders/HTTPRedirect'
 import IFramePassive from './Loaders/IFramePassive'
 import Popup from './Loaders/Popup'
 
 import Fetcher from './HTTP/Fetcher'
-import FetcherJQuery from './HTTP/FetcherJQuery'
+//import FetcherJQuery from './HTTP/FetcherJQuery'
 
 // import ExpiredTokenError from './errors/ExpiredTokenError'
 // import HTTPError from './errors/HTTPError'
@@ -39,31 +31,32 @@ import EventEmitter from './EventEmitter'
 const package_json = require('../package.json')
 
 const default_config = {
- 'lifetime': 3600
+	'lifetime': 3600
 }
 
 class JSO extends EventEmitter {
 	constructor(config) {
-    super()
-		this.configure(config)
-		this.providerID = this.getProviderID()
-		this.Loader = HTTPRedirect
-    this.store = store
-		this.callbacks = {}
+		super();
+		if(!config &&  Tangere) config = Tangere.identity;
+		this.configure(config);
+		this.providerID = this.getProviderID();
+		this.Loader = IFramePassive; // HTTPRedirect;
+		this.store = store;
+		this.callbacks = {};
 
-    if (this.config.getValue('debug', false)) {
-      utils.debug = true
-    }
+		if (this.config.getValue('debug', false)) {
+			utils.debug = true
+		}
 	}
 
 	configure(config) {
 		this.config = new Config(default_config, config)
 	}
 
-  // Experimental, nothing but default store exists yet. Not documented.
-  setStore(newstore) {
-    this.store = newstore
-  }
+	// Experimental, nothing but default store exists yet. Not documented.
+	setStore(newstore) {
+		this.store = newstore
+	}
 
 	setLoader(loader) {
 		if (typeof loader === "function") {
@@ -84,7 +77,7 @@ class JSO extends EventEmitter {
 	getProviderID() {
 
 		var c = this.config.getValue('providerID', null)
-		if (c !== null) {return c}
+		if (c !== null) { return c }
 
 		var client_id = this.config.getValue('client_id', null, true)
 		var authorization = this.config.getValue('authorization', null, true)
@@ -97,37 +90,39 @@ class JSO extends EventEmitter {
 	 * @return {[type]} [description]
 	 */
 	processTokenResponse(atoken) {
-		let state
-		if (atoken.state) {
-			state = this.store.getState(atoken.state)
-		} else {
-			throw new Error("Could not get state from storage.")
-		}
+		let state = null;
+		if (this.config.useStore) {
+			if (atoken.state) {
+				state = this.store.getState(atoken.state)
+			} else {
+				throw new Error("Could not get state from storage.")
+			}
 
-		if (!state) {
-			throw new Error("Could not retrieve state")
-		}
-		if (!state.providerID) {
-			throw new Error("Could not get providerid from state")
+			if (!state) {
+				throw new Error("Could not retrieve state")
+			}
+			if (!state.providerID) {
+				throw new Error("Could not get providerid from state")
+			}
 		}
 		utils.log("processTokenResponse ", atoken, "")
-    return this.processReceivedToken(atoken, state)
+		return this.processReceivedToken(atoken, state)
 	}
 
-  processReceivedToken(atoken, state) {
-    /*
-		 * Decide when this token should expire.
-		 * Priority fallback:
-		 * 1. Access token expires_in
-		 * 2. Life time in config (may be false = permanent...)
-		 * 3. Specific permanent scope.
-		 * 4. Default library lifetime:
-		 */
+	processReceivedToken(atoken, state) {
+		/*
+			 * Decide when this token should expire.
+			 * Priority fallback:
+			 * 1. Access token expires_in
+			 * 2. Life time in config (may be false = permanent...)
+			 * 3. Specific permanent scope.
+			 * 4. Default library lifetime:
+			 */
 		let now = utils.epoch()
-    atoken.received = now
+		atoken.received = now
 		if (atoken.expires_in) {
 			atoken.expires = now + parseInt(atoken.expires_in, 10)
-      atoken.expires_in = parseInt(atoken.expires_in, 10)
+			atoken.expires_in = parseInt(atoken.expires_in, 10)
 		} else if (this.config.getValue('default_lifetime', null) === false) {
 			atoken.expires = null
 		} else if (this.config.has('permanent_scope')) {
@@ -145,81 +140,85 @@ class JSO extends EventEmitter {
 		 */
 		if (atoken.scope) {
 			atoken.scopes = atoken.scope.split(" ")
-      delete atoken.scope
+			delete atoken.scope
 		} else if (state.scopes) {
 			atoken.scopes = state.scopes
 		} else {
 			atoken.scopes = []
 		}
 
-    utils.log("processTokenResponse completed ", atoken, "")
+		utils.log("processTokenResponse completed ", atoken, "")
 
-		this.store.saveToken(state.providerID, atoken)
+		if (this.config.useStore) this.store.saveToken(state.providerID, atoken);
 
-		if (state.restoreHash) {
-			window.location.hash = state.restoreHash
-		} else {
-			window.location.hash = ''
+		if (state) {
+			if (state.restoreHash) {
+				window.location.hash = state.restoreHash
+			} else {
+				window.location.hash = ''
+			}
 		}
+
 		return atoken
-  }
+	}
 
-  // Experimental support for authorization code to be added
-  processAuthorizationCodeResponse(object) {
-    console.log(this)
-    this.emit('authorizationCode', object)
-
+	// Experimental support for authorization code to be added
+	processAuthorizationCodeResponse(object) {
+		console.log(this)
+		this.emit('authorizationCode', object)
 
 		let state
 		if (object.state) {
 			state = this.store.getState(object.state)
-      if (state === null) {
-        throw new Error("Could not find retrieve state object.")
-      }
+			if (state === null) {
+				throw new Error("Could not find retrieve state object.")
+			}
 		} else {
 			throw new Error("Could not find state paramter from callback.")
 		}
-    console.log("state", state)
+		console.log("state", state)
 
-    if (!this.config.has('token')) {
-      utils.log("Received an authorization code. Will not process it as the config option [token] endpoint is not set. If you would like to process the code yourself, please subscribe to the [authorizationCode] event")
-      return
-    }
-    if (!this.config.has('client_secret')) {
-      throw new Error("Configuration missing [client_secret]")
-    }
-    let headers = new Headers()
-    headers.append('Authorization', 'Basic ' + btoa(this.config.getValue('client_id') + ":" + this.config.getValue('client_secret')))
-    headers.append('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8')
+		if (!this.config.has('token')) {
+			utils.log("Received an authorization code. Will not process it as the config option [token] endpoint is not set. If you would like to process the code yourself, please subscribe to the [authorizationCode] event")
+			return;
+		}
 
-    let tokenRequest = {
-      'grant_type': 'authorization_code',
-      'code': object.code
-    }
+		if (!this.config.has('client_secret')) {
+			throw new Error("Configuration missing [client_secret]")
+		}
 
-    if (state.hasOwnProperty('redirect_uri')) {
-      tokenRequest.redirect_uri = state.redirect_uri
-    }
+		let headers = new Headers();
+		headers.append('Authorization', 'Basic ' + btoa(this.config.getValue('client_id') + ":" + this.config.getValue('client_secret')))
+		headers.append('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8')
 
-    let opts = {
-      mode: 'cors',
-      headers: headers,
-      method: 'POST', // or 'PUT'
-      body: utils.encodeQS(tokenRequest), // data can be `string` or {object}!
-    }
-    return fetch(this.config.getValue('token'), opts)
-      .then((httpResponse) => {
-        return httpResponse.json()
-      })
-      .then((tokenResponse) => {
-        // let tokenResponse = httpResponse.json()
-        utils.log("Received response on token endpoint ", tokenResponse, "")
-        return this.processReceivedToken(tokenResponse, state)
-      })
+		let tokenRequest = {
+			'grant_type': 'authorization_code',
+			'code': object.code
+		}
 
-    // throw new Exception("Implementation of authorization code flow is not yet implemented. Instead use the implicit grant flow")
+		if (state.hasOwnProperty('redirect_uri')) {
+			tokenRequest.redirect_uri = state.redirect_uri
+		}
 
-  }
+		let opts = {
+			mode: 'cors',
+			headers: headers,
+			method: 'POST', // or 'PUT'
+			body: utils.encodeQS(tokenRequest), // data can be `string` or {object}!
+		}
+		return fetch(this.config.getValue('token'), opts)
+			.then((httpResponse) => {
+				return httpResponse.json()
+			})
+			.then((tokenResponse) => {
+				// let tokenResponse = httpResponse.json()
+				utils.log("Received response on token endpoint ", tokenResponse, "")
+				return this.processReceivedToken(tokenResponse, state)
+			})
+
+		// throw new Exception("Implementation of authorization code flow is not yet implemented. Instead use the implicit grant flow")
+
+	}
 
 
 
@@ -260,27 +259,27 @@ class JSO extends EventEmitter {
 	 * instead the response is received on a child browser.
 	 */
 	callback(data) {
+		debugger;
+		let response = null;
+		if (typeof data === 'object') {
+			response = data;
+		} else if (typeof data === 'string') {
+			response = utils.getResponseFromURL(data);
+		} else if (typeof data === 'undefined') {
+			response = utils.getResponseFromURL(window.location.href);
+		} else {
+			// no response provided.
+			return;
+		}
 
-    let response = null
-    if (typeof data === 'object') {
-      response = data
-    } else if (typeof data === 'string') {
-      response = utils.getResponseFromURL(data)
-    } else if (typeof data === 'undefined') {
-      response = utils.getResponseFromURL(window.location.href)
-    } else {
-      // no response provided.
-      return
-    }
-
-    utils.log('Receving response in callback', response)
+		utils.log('Receving response in callback', response)
 
 		if (response.hasOwnProperty("access_token")) {
 			return this.processTokenResponse(response)
 
-    // Implementation of authorization code flow is in beta.
+			// Implementation of authorization code flow is in beta.
 		} else if (response.hasOwnProperty("code")) {
-      return this.processAuthorizationCodeResponse(response)
+			return this.processAuthorizationCodeResponse(response)
 
 		} else if (response.hasOwnProperty("error")) {
 			throw this.processErrorResponse(response)
@@ -305,13 +304,13 @@ class JSO extends EventEmitter {
 		 * Calculate which scopes to request, based upon provider config and request config.
 		 */
 		if (this.config.has('scopes.request')) {
-      let s = this.config.getValue('scopes.request')
-			for(i = 0; i < s.length; i++) {
-        scopes.push(s[i])
-      }
+			let s = this.config.getValue('scopes.request')
+			for (i = 0; i < s.length; i++) {
+				scopes.push(s[i])
+			}
 		}
 		if (opts && opts.scopes && opts.scopes.request) {
-			for(i = 0; i < opts.scopes.request.length; i++) {scopes.push(opts.scopes.request[i])}
+			for (i = 0; i < opts.scopes.request.length; i++) { scopes.push(opts.scopes.request[i]) }
 		}
 		return utils.uniqueList(scopes)
 	}
@@ -322,13 +321,14 @@ class JSO extends EventEmitter {
 		 * Calculate which scopes to request, based upon provider config and request config.
 		 */
 		if (this.config.has('scopes.require')) {
-      let s = this.config.getValue('scopes.require')
-      for(i = 0; i < s.length; i++) {
-        scopes.push(s[i])
-      }
+			let s = this.config.getValue('scopes.require')
+			for (i = 0; i < s.length; i++) {
+				scopes.push(s[i])
+			}
 		}
+
 		if (opts && opts.scopes && opts.scopes.require) {
-			for(i = 0; i < opts.scopes.require.length; i++) {scopes.push(opts.scopes.require[i])}
+			for (i = 0; i < opts.scopes.require.length; i++) { scopes.push(opts.scopes.require[i]) }
 		}
 		return utils.uniqueList(scopes)
 	}
@@ -342,12 +342,24 @@ class JSO extends EventEmitter {
 	 * @return {[type]}      [description]
 	 */
 	getToken(opts) {
-    opts = opts || {}
 
-    return new Promise((resolve, reject) => {
+		opts = opts || {
+			// default: silent OpenId Request
+            scopes: {
+                request: ['openid', 'profile']
+            },
+            response_type: 'id_token token',
+            request: {
+                prompt: 'none'
+            }
+        };
 
-      let scopesRequire = this._getRequiredScopes(opts)
-			let token = this.store.getToken(this.providerID, scopesRequire)
+		return new Promise((resolve, reject) => {
+
+			let scopesRequire = this._getRequiredScopes(opts)
+			let token = null;
+
+			if (this.config.useStore) token = this.store.getToken(this.providerID, scopesRequire)
 
 			if (token) {
 				return resolve(token)
@@ -361,14 +373,15 @@ class JSO extends EventEmitter {
 					resolve(this._authorize(opts))
 				}
 			}
-    })
+		})
 
 	}
 
 	checkToken(opts) {
 		// var scopesRequest  = this._getRequestScopes(opts)
 
-		var scopesRequire = this._getRequiredScopes(opts)
+		var scopesRequire = this._getRequiredScopes(opts);
+		if (!this.config.useStore) return null;
 		return this.store.getToken(this.providerID, scopesRequire)
 	}
 
@@ -380,69 +393,67 @@ class JSO extends EventEmitter {
 	 * @return {[type]}      [description]
 	 */
 	_authorize(opts) {
-		var
-			request,
-			authurl,
-			scopes
+
+		var request, authurl, scopes;
 
 		return Promise.resolve().then(() => {
 
-			let authorization = this.config.getValue('authorization', null, true)
-			let client_id = this.config.getValue('client_id', null, true)
-      let openid = false
-
-      if (opts.hasOwnProperty('allowia') || this.config.has('allowia')) {
-        throw new Error('The allowia option was removed in JSO 4.1.0. Instead use {request: {prompt: "none"}}')
-      }
+			let openid = false;
+			let authorization = this.config.getValue('authorization', null, true);
+			let client_id = this.config.getValue('client_id', null, true);
+			let login_hint = this.config.getValue('login_hint', '', false);
+			let redirect_uri = this.config.getValue('redirect_uri', '', false);
 
 			utils.log("About to send an authorization request to this endpoint", authorization)
 			utils.log("Options", opts)
 
-			request = {}
+			request = {};
 
-      if (this.config.has('request')) {
-        let r = this.config.getValue('request')
-        request = assign(request, r)
-      }
-      if (opts.hasOwnProperty('request')) {
-        request = assign(request, opts.request)
-      }
+			if (this.config.has('request')) {
+				let r = this.config.getValue('request');
+				request = Object.assign(request, r);
+			}
 
+			if (opts.hasOwnProperty('request')) {
+				request = Object.assign(request, opts.request);
+			}
 
-      request.response_type = opts.response_type || this.config.getValue('response_type', 'id_token token')
-      request.state = utils.uuid()
+			request.response_type = opts.response_type || this.config.getValue('response_type', 'id_token token');
+			request.state = utils.uuid();
 
 			if (this.config.has('redirect_uri')) {
-				request.redirect_uri = this.config.getValue('redirect_uri', '')
-			}
-			if (opts.redirect_uri) {
-				request.redirect_uri = opts.redirect_uri
+				request.redirect_uri = this.config.getValue('redirect_uri', '');
 			}
 
-			request.client_id = client_id
+			if (login_hint) request.login_hint = login_hint;
+			if (opts.redirect_uri) request.redirect_uri = opts.redirect_uri;
 
+			request.client_id = client_id;
 
 			/*
 			 * Calculate which scopes to request, based upon provider config and request config.
 			 */
-			scopes = this._getRequestScopes(opts)
-      openid = scopes.includes('openid')
+			scopes = this._getRequestScopes(opts);
+			openid = scopes.includes('openid');
+
 			if (scopes.length > 0) {
 				request.scope = utils.scopeList(scopes)
 			}
-      utils.log("Running in mode: " + (openid ? 'OpenID Connect mode' : 'OAuth mode'))
 
-      if (openid && !request.hasOwnProperty('redirect_uri')) {
-        throw new Error('An OpenID Request requires a redirect_uri to be set. Please add to configuration. A redirect_uri is not required for plain OAuth')
-      }
+			utils.log("Running in mode: " + (openid ? 'OpenID Connect mode' : 'OAuth mode'))
 
-      if (openid) {
-        request.nonce = utils.uuid()
-      }
+			if (openid && !request.hasOwnProperty('redirect_uri')) {
+				throw new Error('An OpenID Request requires a redirect_uri to be set. Please add to configuration. A redirect_uri is not required for plain OAuth')
+			}
 
-			utils.log("Debug Authentication request object", JSON.stringify(request, undefined, 2))
+			if (openid) {
+				request.nonce = utils.uuid();
+			}
 
-			authurl = utils.encodeURL(authorization, request)
+			utils.log("Debug Authentication request object", JSON.stringify(request, undefined, 2));
+
+			authurl = utils.encodeURL(authorization, request);
+			utils.log("authurl", authurl);
 
 			// We'd like to cache the hash for not loosing Application state.
 			// With the implciit grant flow, the hash will be replaced with the access
@@ -450,14 +461,11 @@ class JSO extends EventEmitter {
 			if (window.location.hash) {
 				request.restoreHash = window.location.hash
 			}
+
 			request.providerID = this.providerID
 			if (scopes) {
 				request.scopes = scopes
 			}
-
-
-			utils.log("Saving state [" + request.state + "]")
-			utils.log(JSON.parse(JSON.stringify(request)))
 
 			var loader = this.Loader
 			if (opts.hasOwnProperty("loader")) {
@@ -466,29 +474,30 @@ class JSO extends EventEmitter {
 
 			utils.log("Looking for loader", opts, loader)
 
-			this.store.saveState(request.state, request)
-			return this.gotoAuthorizeURL(authurl, loader)
+			if (this.config.useStore) this.store.saveState(request.state, request);
+
+			return this.gotoAuthorizeURL(authurl, loader, redirect_uri)
 				.then((response) => {
-          if (response !== true) {
-            return this.callback(response)
-          }
+					if (response !== true) {
+						return this.callback(response)
+					}
 				})
-
-
 		})
-
 	}
 
-	gotoAuthorizeURL(url, Loader) {
-		return new Promise(function(resolve, reject) {
+	gotoAuthorizeURL(url, Loader, redirect_uri) {
+		return new Promise(function (resolve, reject) {
 			if (Loader !== null && typeof Loader === 'function') {
-				var loader = new Loader(url)
+				var loader = new Loader(url, redirect_uri);
+
 				if (!(loader instanceof BasicLoader)) {
 					throw new Error("JSO selected Loader is not an instance of BasicLoader.")
 				}
-				resolve(loader.execute())
+
+				resolve(loader.execute());
+
 			} else {
-				reject(new Error('Cannot redirect to authorization endpoint because of missing redirect handler'))
+				reject(new Error('Cannot redirect to authorization endpoint because of missing redirect handler'));
 			}
 		})
 	}
@@ -499,8 +508,5 @@ class JSO extends EventEmitter {
 
 }
 
-// Object.assign(JSO.prototype, new EventEmitter({}))
 
-export {JSO, BasicLoader, HTTPRedirect, Popup, IFramePassive, Fetcher, FetcherJQuery}
-// Work in progress
-// Authentication
+export { JSO, BasicLoader, Popup, IFramePassive, Fetcher }

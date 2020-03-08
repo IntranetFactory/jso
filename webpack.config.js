@@ -6,7 +6,7 @@ module.exports = {
     path: path.resolve(__dirname, 'dist'),
     filename: 'jso.js',
     library: 'jso',
-    libraryTarget: 'umd'
+    libraryTarget: 'window'
   },
   devtool: "source-map",
 

@@ -3,26 +3,47 @@ import utils from '../utils'
 
 export default class IFramePassive extends BasicLoader {
 
-	constructor(url) {
-		super(url)
-
-		this.timeout = 5000
-		this.callback = null
-		this.isCompleted = false
-    this.id = 'jso_passive_iframe_' + utils.uuid()
+  constructor(url, redirect_uri) {
+    super(url);   
+    this.timeout = 10000;
+    this.callback = null;
+    this.isCompleted = false;    
+    this.redirect_uri = redirect_uri || "missing";
+    this.id = 'jso_passive_iframe_' + utils.uuid();
 
     // Create IE + others compatible event handler
-    var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent"
-    var eventer = window[eventMethod]
-    var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message"
+    var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
+    var eventer = window[eventMethod];
 
-    this.iframe = document.createElement('iframe')
-    this.iframe.setAttribute('id', this.id)
-    this.iframe.setAttribute('src', url)
+    window.addEventListener('message', (e) => {
 
+      if (e.data.type !== "callback") return;
+      let object = e.data.hash;
+
+      if (this.redirect_uri.indexOf(e.origin) != 0) return;
+
+      var error = "";
+      if (object.indexOf("#error") == 0) {
+        error = decodeURIComponent(object).replace(/\+/g, ' ');
+        object = null;
+      }
+
+      if (object !== null) {
+        this._completed(object);
+      } else {
+        this._failed(new Error(error ? error : "Failed to obtain response value from iframe"));
+      }
+
+    });
+
+    this.iframe = document.createElement('iframe');
+    this.iframe.setAttribute('id', this.id);
+    this.iframe.setAttribute('src', url);
+
+    /*
     this.iframe.addEventListener('load', (e) => {
 
-      let object = null
+      let object = null;
       try {
         if (this.iframe.contentWindow.location.hash) {
           let encodedHash = this.iframe.contentWindow.location.hash.substring(1)
@@ -37,53 +58,56 @@ export default class IFramePassive extends BasicLoader {
         } else {
           this._failed(new Error("Failed to obtain response value from iframe"))
         }
-      } catch(err) {
+      } catch (err) {
         // Most likely not able to access the content window because of same-origin policy.
         //
         // Ignore this error, as this is likely to happen during the SSO redirect loop, but the load
         // event may be triggered multiple times, so it is not neccessary a problem that the first is not
         // accessible.
-      }
+      }     
 
     })
+    */
 
-	}
+  }
 
-	execute() {
-		return new Promise((resolve, reject) => {
-			this.callback = resolve
+  execute() {
+    return new Promise((resolve, reject) => {
+      this.callback = resolve
       this.errorCallback = reject
       document.getElementsByTagName('body')[0].appendChild(this.iframe)
 
-			setTimeout(() => {
-				this._failed(new Error("Loading iframe timed out"))
-			}, this.timeout)
-		})
-	}
+      setTimeout(() => {
+        this._failed(new Error("Loading iframe timed out"))
+      }, this.timeout)
+    })
+  }
 
 
-	_cleanup() {
+  _cleanup() {
     let element = document.getElementById(this.id)
     element.parentNode.removeChild(element)
-	}
+  }
 
   _failed(err) {
     if (!this.isCompleted) {
-			if (this.errorCallback && typeof this.errorCallback === 'function') {
-				this.errorCallback(err)
-			}
-			this.isCompleted = true
-			this._cleanup()
-		}
+      if (this.errorCallback && typeof this.errorCallback === 'function') {
+        this.errorCallback(err)
+      }
+      this.isCompleted = true;
+      this._cleanup();
+    }
   }
 
-	_completed(response) {
-		if (!this.isCompleted) {
-			if (this.callback && typeof this.callback === 'function') {
-				this.callback(response)
-			}
-			this.isCompleted = true
-			this._cleanup()
-		}
-	}
+  _completed(response) {
+    if (!this.isCompleted) {
+
+      if (this.callback && typeof this.callback === 'function') {
+        this.callback(response);
+      }
+
+      this.isCompleted = true;
+      this._cleanup();
+    }
+  }
 }
