@@ -141,7 +141,7 @@ class JSO extends EventEmitter {
 		if (atoken.scope) {
 			atoken.scopes = atoken.scope.split(" ")
 			delete atoken.scope
-		} else if (state.scopes) {
+		} else if (state && state.scopes) {
 			atoken.scopes = state.scopes
 		} else {
 			atoken.scopes = []
